@@ -41,6 +41,13 @@ public class Track {
 			e.printStackTrace();
 		}
 	}
+
+	public Track() {
+		filePath = "";
+		length = 0L;
+		title = "N/A";
+		artist = "N/A";
+	}
 	
 	public void saveTrack() {
 		ObjectMapper objectMapper = new ObjectMapper();
