@@ -36,7 +36,10 @@ public class Player extends PlaybackListener {
 	}
 	
 	public Playlist getPlaylistAtIndex(Integer index) {
-		return playlists.get(index);
+		if (index >= 0 && index < playlists.size())
+			return playlists.get(index);
+		else
+			return null;
 	}
 	
 	public Track getCurrentTrack() {
@@ -66,7 +69,8 @@ public class Player extends PlaybackListener {
 		currentTrack = track;
 		
 		if (currentTrack != null) {
-			playCurrentTrack();
+			if (!playCurrentTrack())
+				System.out.println("Error! Can't play current track");
 		}
 	}
 	
@@ -151,28 +155,29 @@ public class Player extends PlaybackListener {
 		
 		try {
 			File file = new File("src/assets/tracks.json");
-			file.createNewFile();
-			
-			JsonNode objectNode = objectMapper.readTree(file);
-			if (objectNode instanceof ArrayNode)
-				trackArray = (ArrayNode)objectMapper.readTree(file);
-			
-			if (trackArray == null) {
-				trackArray = objectMapper.createArrayNode();
-			}
-			
-			for (int i = 0; i < trackArray.size(); i++) {
-				String path = trackArray.get(i).asText();
-				File f = new File(path);
-				
-				if (!f.exists()) {
-					System.out.println("Couldn't find track at " + path);
-					continue;
+			if (file.createNewFile()) {
+				System.out.println("No saved tracks found, library is empty");
+			} else {
+				JsonNode objectNode = objectMapper.readTree(file);
+				if (objectNode instanceof ArrayNode)
+					trackArray = (ArrayNode) objectMapper.readTree(file);
+
+				if (trackArray == null) {
+					trackArray = objectMapper.createArrayNode();
 				}
-				
-				library.addTrack(new Track(path));
+
+				for (int i = 0; i < trackArray.size(); i++) {
+					String path = trackArray.get(i).asText();
+					File f = new File(path);
+
+					if (!f.exists()) {
+						System.out.println("Couldn't find track at " + path);
+						continue;
+					}
+
+					library.addTrack(new Track(path));
+				}
 			}
-			
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -181,42 +186,44 @@ public class Player extends PlaybackListener {
 		currentPlaylistIndex = 0;
 		currentTrackIndex = 0;
 		currentTrack = library.getTrackAtIndex(0);
-		
+
 		
 		try {
 			Playlist tmpPlaylist = null;
 			File file = new File("src/assets/playlists.json");
-			file.createNewFile();
-			
-			JsonNode objectNode = objectMapper.readTree(file);
-			if (objectNode instanceof ArrayNode)
-				playlistArray = (ArrayNode)objectMapper.readTree(file);
-			
-			if (playlistArray == null) {
-				playlistArray = objectMapper.createArrayNode();
-			}
-			
-			for (JsonNode node : playlistArray) {
-				if (node.has("title") && node.has("tracks")) {
-					tmpPlaylist = new Playlist(node.get("title").asText());
-					
-	                JsonNode tracksNode = node.get("tracks");
-	                
-	                if (tracksNode != null && tracksNode.isArray()) {
-	                    for (JsonNode trackNode : tracksNode) {
-	                    	String path = trackNode.asText();
-	        				File f = new File(path);
-	        				
-	        				if (!f.exists()) {
-	        					System.out.println("Couldn't find track at " + path);
-	        					continue;
-	        				}
-	                    	
-	                        tmpPlaylist.addTrack(new Track(path));
-	                    }
-	                }
-	                
-	                playlists.add(tmpPlaylist);
+			if (file.createNewFile()) {
+				System.out.println("No saved playlists found");
+			} else {
+				JsonNode objectNode = objectMapper.readTree(file);
+				if (objectNode instanceof ArrayNode)
+					playlistArray = (ArrayNode)objectMapper.readTree(file);
+
+				if (playlistArray == null) {
+					playlistArray = objectMapper.createArrayNode();
+				}
+
+				for (JsonNode node : playlistArray) {
+					if (node.has("title") && node.has("tracks")) {
+						tmpPlaylist = new Playlist(node.get("title").asText());
+
+						JsonNode tracksNode = node.get("tracks");
+
+						if (tracksNode != null && tracksNode.isArray()) {
+							for (JsonNode trackNode : tracksNode) {
+								String path = trackNode.asText();
+								File f = new File(path);
+
+								if (!f.exists()) {
+									System.out.println("Couldn't find track at " + path);
+									continue;
+								}
+
+								tmpPlaylist.addTrack(new Track(path));
+							}
+						}
+
+						playlists.add(tmpPlaylist);
+					}
 				}
 			}
 			
@@ -241,7 +248,6 @@ public class Player extends PlaybackListener {
 			currentTrackIndex = playlists.get(currentPlaylistIndex).getTracklist().size() - 1;
 			currentTrack = playlists.get(currentPlaylistIndex).getTrackAtIndex(currentTrackIndex);
 		}
-		
 	}
 	
 	public void playNext() {
@@ -290,11 +296,15 @@ public class Player extends PlaybackListener {
 		playlists.get(playlists.size() - 1).savePlaylist();
 		return true;
 	}
+
+	public void addTrack(Track track) {
+		playlists.get(0).addTrack(track);
+	}
 	
 	public boolean deletePlaylist(String title) {
 		for (int i = 1; i < playlists.size(); i++) {
 			if (playlists.get(i).getTitle().equals(title)) {
-				playlists.get(i).deletePlaylist(i);
+				playlists.remove(i);
 				return true;
 			}
 		}
@@ -360,9 +370,9 @@ public class Player extends PlaybackListener {
 					if (playlists.get(0).getTracklist().get(j).getTitle().equals(tTitle)) {
 						playlists.get(i).addTrack(playlists.get(0).getTrackAtIndex(j));
 						playlists.get(i).savePlaylist();
+						return true;
 					}
 				}
-				return true;
 			}
 		}
 		return false;
