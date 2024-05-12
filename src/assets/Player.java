@@ -14,6 +14,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
 public class Player extends PlaybackListener {
+	private static final Object playSignal = new Object();
+	private MP3PlayerGui mp3PlayerGui;
+
 	private Track currentTrack;
 	
 	private final ArrayList<Playlist> playlists;
@@ -21,11 +24,25 @@ public class Player extends PlaybackListener {
 	private Integer currentPlaylistIndex;
 	private Integer currentTrackIndex;
 	private Integer currentFrame = 0;
+	public void setCurrentFrame(int frame) {
+		this.currentFrame = frame;
+	}
+
 	private Integer currentTime = 0;
+	public void setCurrentTime(int time) {
+		this.currentTime = time;
+	}
 	
 	private AdvancedPlayer advancedPlayer;
 	private Boolean isPaused = false;
-	
+	private Boolean usedAction = false;
+
+	public Player(MP3PlayerGui mp3PlayerGui) {
+		this.mp3PlayerGui = mp3PlayerGui;
+		playlists = new ArrayList<>();
+		loadPlaylists();
+	}
+
 	public Player() {
 		playlists = new ArrayList<>();
         loadPlaylists();
@@ -67,7 +84,7 @@ public class Player extends PlaybackListener {
 	
 	public void loadTrack(Track track) {
 		currentTrack = track;
-		
+
 		if (currentTrack != null) {
 			if (!playCurrentTrack())
 				System.out.println("Error! Can't play current track");
@@ -99,9 +116,9 @@ public class Player extends PlaybackListener {
 			
 			advancedPlayer = new AdvancedPlayer(bufferedInputStream);
 			advancedPlayer.setPlayBackListener(this);
-			
+
 			startMusicThread();
-			startTimeTrackingThread();
+			startPlaybackSliderThread();
 			return true;
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -115,30 +132,19 @@ public class Player extends PlaybackListener {
 			public void run() {
 				try {
 					if (isPaused) {
+
+						synchronized (playSignal) {
+							isPaused = false;
+
+							playSignal.notify();
+						}
+
 						advancedPlayer.play(currentFrame, Integer.MAX_VALUE);
 					} else {
 						advancedPlayer.play();
 					}
-					isPaused = false;
 				} catch (Exception e) {
 					e.printStackTrace();
-				}
-			}
-		}).start();
-	}
-	
-	private void startTimeTrackingThread() {
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				currentTime = 0;
-				while (!isPaused) {						
-					currentTime++;
-					try {
-						Thread.sleep(1);
-					} catch (Exception e) {
-						e.printStackTrace();
-					}
 				}
 			}
 		}).start();
@@ -239,28 +245,45 @@ public class Player extends PlaybackListener {
 	
 	public void playPrevious() {
 		Track prevTrack = null;
+
+		currentTime = 0;
+		currentFrame = 0;
+		usedAction = true;
+
 		prevTrack = playlists.get(currentPlaylistIndex).getTrackAtIndex(currentTrackIndex - 1);
 		stopPlaying();
-		currentTrackIndex--;
-		loadTrack(prevTrack);
+
+		usedAction = false;
 		
 		if (prevTrack == null) {
 			currentTrackIndex = playlists.get(currentPlaylistIndex).getTracklist().size() - 1;
 			currentTrack = playlists.get(currentPlaylistIndex).getTrackAtIndex(currentTrackIndex);
+			loadTrack(currentTrack);
+		} else {
+			currentTrackIndex--;
+			loadTrack(prevTrack);
 		}
 	}
 	
 	public void playNext() {
 		Track nextTrack = null;
-		
+
+		currentTime = 0;
+		currentFrame = 0;
+		usedAction = true;
+
 		nextTrack = playlists.get(currentPlaylistIndex).getTrackAtIndex(currentTrackIndex + 1);
 		stopPlaying();
-		currentTrackIndex++;
-		loadTrack(nextTrack);
+
+		usedAction = false;
 		
 		if (nextTrack == null) {
 			currentTrackIndex = 0;
 			currentTrack = playlists.get(currentPlaylistIndex).getTrackAtIndex(0);
+			loadTrack(currentTrack);
+		} else {
+			currentTrackIndex++;
+			loadTrack(nextTrack);
 		}
 	}
 	
@@ -299,6 +322,7 @@ public class Player extends PlaybackListener {
 
 	public void addTrack(Track track) {
 		playlists.get(0).addTrack(track);
+		track.saveTrack();
 	}
 	
 	public boolean deletePlaylist(String title) {
@@ -328,8 +352,14 @@ public class Player extends PlaybackListener {
 			if (playlists.get(i).getTitle().equals(title)) {
 				currentPlaylistIndex = i;
 				currentTrackIndex = 0;
+				usedAction = true;
+
 				stopPlaying();
 				loadTrack(playlists.get(i).getTrackAtIndex(0));
+
+				usedAction = false;
+				currentFrame = 0;
+				currentTime = 0;
 				return true;
 			}
 		}
@@ -337,12 +367,18 @@ public class Player extends PlaybackListener {
 	}
 	
 	public boolean playPlaylist(Integer index)	 {
-		for (Integer i = 1; i < playlists.size(); i++) {
+		for (Integer i = 0; i < playlists.size(); i++) {
 			if (i.equals(index)) {
 				currentPlaylistIndex = i;
 				currentTrackIndex = 0;
+				usedAction = true;
+
 				stopPlaying();
 				loadTrack(playlists.get(i).getTrackAtIndex(0));
+
+				usedAction = false;
+				currentFrame = 0;
+				currentTime = 0;
 				return true;
 			}
 		}
@@ -406,11 +442,57 @@ public class Player extends PlaybackListener {
 		}
 		return false;
 	}
+
+	private void startPlaybackSliderThread() {
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+				int playingIndex = currentTrackIndex;
+
+				if (isPaused) {
+					try {
+						synchronized (playSignal) {
+							playSignal.wait();
+						}
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+				}
+
+				while (!isPaused) {
+					try {
+						if (usedAction || playingIndex != currentTrackIndex) {
+							break;
+						}
+
+						currentTime++;
+
+
+						int calculatedFrame = (int) ((double)currentTime * 2.05 * currentTrack.getFramerate());
+						mp3PlayerGui.setPlaybackSliderValue(calculatedFrame);
+
+                        Thread.sleep(1);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+			}
+		}).start();
+	}
 	
 	@Override
 	public void playbackFinished(PlaybackEvent evt) {
 		if (isPaused) {
 			currentFrame += (int)((double)evt.getFrame() * currentTrack.getFramerate());
+		} else {
+			if (!usedAction) {
+				advancedPlayer = null;
+				playNext();
+
+				mp3PlayerGui.updatePlayPauseButtons(true);
+				mp3PlayerGui.updateText();
+				mp3PlayerGui.updatePlaybackSlider();
+			}
 		}
 	}
 

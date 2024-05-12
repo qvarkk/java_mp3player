@@ -18,12 +18,13 @@ public class Track {
 	private Long length;
 	private String filePath;
 	private Double framerate;
+	private Mp3File mp3File;
 	
 	public Track(String filePath) {
 		this.filePath = filePath;
 		
 		try {			
-			Mp3File mp3File = new Mp3File(filePath);
+			mp3File = new Mp3File(filePath);
 			length = mp3File.getLengthInSeconds();
 			framerate = (double)mp3File.getFrameCount() / mp3File.getLengthInMilliseconds();
 			
@@ -84,6 +85,8 @@ public class Track {
 	public Long getLength() {
 		return length;
 	}
+
+	public Mp3File getMp3File() { return mp3File; }
 	
 	public String getFormatedLength() {
 		Long minutes = length / 60;
